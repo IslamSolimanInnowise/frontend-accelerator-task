@@ -6,7 +6,11 @@
 
 ## Findings
 
-### 1. [Should-Fix] Induced-failure mock is defeated by `<StrictMode>` in the actual dev environment, undermining Assumption A5 and manual verification (AC16)
+### 1. [Should-Fix — RESOLVED 2026-08-27] Induced-failure mock is defeated by `<StrictMode>` in the actual dev environment, undermining Assumption A5 and manual verification (AC16)
+
+**Resolution:** Fixed in commit `f40ddc5` — `src/api/sessionsApi.ts` now shares one in-flight list request between concurrent callers, so `<StrictMode>`'s double-invoked mount effect produces a single request/response pair instead of two, and the non-cancelled effect invocation renders the error state. A follow-up code-reviewer pass confirmed the fix's reasoning holds in a real browser (not just jsdom) and introduces no new defect. The developer then re-ran `npm run dev` and confirmed directly: first load now shows the induced 500/error+retry UI, and clicking the in-app Retry button loads the list successfully — closing the AC16 gap this finding identified. See the "Re-verification after StrictMode fix" entry in `frontend-accelerator-onboarding/workflow-log.md` for the recorded observation.
+
+Original finding, preserved for context: 
 
 **Files:** `src/mocks/handlers.ts:9-26`, `src/features/sessions/SessionsWorkspace.tsx:19-37`, `src/main.tsx:16-18`
 
@@ -43,12 +47,6 @@ The zero-results message always reads "No sessions match the current filter," ev
 
 `afterEach` calls `server.resetHandlers()` and RTL `cleanup()`, but `listFetchCount` (handlers.ts:9) and `sessionsStore` (data.ts) are plain module-level mutable state, not MSW handler state — `resetHandlers()` does not touch them. With only one `it` block today this causes no failure, but the very next test added to this file (e.g., the optional create-flow test the plan flags as "if time remains") will start with `listFetchCount` already at 2 (so its first GET succeeds immediately instead of failing) and `sessionsStore` already containing whatever the prior test created/left behind. This isn't a defect in the shipped diff, but it's a landmine for the next person who extends this test file, worth calling out per the "residual gaps" review duty.
 
-### 5. [Nit] `package.json` loses its trailing newline
-
-**File:** `package.json:44`
-
-Diff shows `\ No newline at end of file`. Cosmetic only.
-
 ## Requirements/Plan Conformance Check
 
 Walked every acceptance criterion (AC1-AC16) against the diff:
@@ -60,15 +58,15 @@ Walked every acceptance criterion (AC1-AC16) against the diff:
 - **AC12 (failure preserves input):** Satisfied — form state isn't cleared on catch.
 - **AC13-AC14 (single API boundary, MSW-only mocking):** Satisfied — grepped the diff; only `src/api/sessionsApi.ts` calls `fetch`, no backend implemented.
 - **AC15 (one behavior-level test):** Satisfied — `SessionsWorkspace.test.tsx` covers the filter flow end-to-end against the real MSW boundary, including the induced failure/retry path.
-- **AC16 (manual verification recorded):** Not code, so not reviewed as a diff item — but Finding 1 is directly relevant to whether that manual check can actually observe the error state as the plan intended, and the recorded observation in the workflow log confirms it did not surface.
+- **AC16 (manual verification recorded):** Not code, so not reviewed as a diff item at the time — Finding 1 correctly identified that the recorded observation could not have shown the error state as the plan intended, since `<StrictMode>` was masking it. As of the `f40ddc5` fix and the developer's follow-up `npm run dev` re-check (recorded in the workflow log), the error+retry state is now observed and AC16 is satisfied.
 - **Non-Goals:** No evidence of scope creep — no routing, search, pagination, edit/delete, or auth added.
 
-No requirement or plan item is silently unmet; Findings 1-3 are gaps in robustness/UX polish against the stated ACs, not missing features.
+No requirement or plan item is silently unmet; Findings 1-3 were gaps in robustness/UX polish against the stated ACs, not missing features. Finding 1 is now resolved (see above); Findings 2-4 remain open.
 
 ## Verdict
 
-**NEEDS-CHANGES** — one Should-Fix finding (Finding 1) that undercuts a documented design intent (Assumption A5) and the manual-verification step for AC4/AC16 in the one environment (`npm run dev`) where it's meant to be observable, even though the automated test still proves the underlying behavior. Findings 2-5 are minor/nit and don't block, but should be tracked.
+**PASS** (updated 2026-08-27, after Finding 1's resolution) — the one Should-Fix finding is resolved and verified in a real browser, not just by the automated test. Findings 2 and 3 are minor UX/copy gaps and Finding 4 is a residual test-fragility risk; none are blocking, but they remain open and should be tracked if this workspace is extended further.
 
-**Residual gaps not covered by this diff's tests (even after fixes):** creation-flow success/failure path (optional per AC15, not implemented), and the cross-test mock-state isolation risk noted in Finding 4.
+**Residual gaps not covered by this diff's tests:** creation-flow success/failure path (optional per AC15, not implemented), and the cross-test mock-state isolation risk noted in Finding 4.
 
-Suggested next step: hand Finding 1 to `debugger` or `coder` to pick a StrictMode-safe way to simulate the induced failure (e.g., gate it behind a request-scoped signal instead of a raw module counter, or accept/document that the error path is test-only and adjust the handler comment and manual-verification note accordingly).
+Original verdict, preserved for context: NEEDS-CHANGES, blocked on Finding 1 (StrictMode defeating the induced failure in `npm run dev`), routed to `debugger`.

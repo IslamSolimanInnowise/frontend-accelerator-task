@@ -6,6 +6,10 @@ import { nextSessionId, sessionsStore } from './data'
 // fails on the first call after each module load, then succeeds on every
 // subsequent call, so the loading -> error -> retry -> success path is
 // demonstrable without a real backend. This is expected behavior, not a bug.
+// One user-visible load equals one call here because src/api/sessionsApi.ts
+// shares a single in-flight list request between concurrent callers (see the
+// comment there); without that, <StrictMode>'s double-mount would consume the
+// induced failure invisibly and the error state would never render in the browser.
 let listFetchCount = 0
 
 function isFutureDate(value: string): boolean {
